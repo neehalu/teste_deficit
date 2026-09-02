@@ -1,6 +1,7 @@
 # nao publicar dados de conexao nem as consultas internas
 config.py
 *.sql
+*.bat
 
 # arquivos temporarios / cache
 _fontes/
