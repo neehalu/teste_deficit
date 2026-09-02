@@ -1,0 +1,8 @@
+# nao publicar dados de conexao nem as consultas internas
+config.py
+*.sql
+
+# arquivos temporarios / cache
+_fontes/
+__pycache__/
+*.pyc
