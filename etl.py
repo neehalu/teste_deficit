@@ -1043,7 +1043,8 @@ def gerar_pagina(xlsx_path, out_html="index.html"):
                 .replace("{{PROJ_LBL}}", f"{nxt}\u2013dez")
                 .replace("{{MESES_N}}", str(mf))
                 .replace("{{WIN}}", str(mf-3))
-                .replace("{{XLSX}}", os.path.basename(xlsx_path)))
+                .replace("{{XLSX}}", os.path.basename(xlsx_path))
+                .replace("{{ATUALIZADO}}", date.today().strftime("%d/%m/%Y")))
     with open(out_html, "w", encoding="utf-8") as f:
         f.write(html)
     return out_html
