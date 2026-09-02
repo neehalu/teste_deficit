@@ -15,7 +15,7 @@ import os
 import sys
 import json
 import re
-from datetime import date
+from datetime import date, datetime
 import oracledb
 import pandas as pd
 import openpyxl
@@ -1044,7 +1044,7 @@ def gerar_pagina(xlsx_path, out_html="index.html"):
                 .replace("{{MESES_N}}", str(mf))
                 .replace("{{WIN}}", str(mf-3))
                 .replace("{{XLSX}}", os.path.basename(xlsx_path))
-                .replace("{{ATUALIZADO}}", date.today().strftime("%d/%m/%Y")))
+                .replace("{{ATUALIZADO}}", datetime.now().strftime("%d/%m/%Y às %H:%M")))
     with open(out_html, "w", encoding="utf-8") as f:
         f.write(html)
     return out_html
