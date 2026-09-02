@@ -13,6 +13,8 @@ A senha vem da variavel ORACLE_PWD e NAO fica salva em arquivo.
 """
 import os
 import sys
+import json
+import re
 from datetime import date
 import oracledb
 import pandas as pd
@@ -819,6 +821,234 @@ def gerar_analise(SRC, SRC_LIQ, OUT):
     wb.save(OUT)
     print('saved; abas:', wb.sheetnames)
 
+# =============================== PARSER DO DASHBOARD =========================================
+TREAS = ['100', '101', '102', '161', '178', '183']  # fontes do tesouro
+HERE = os.path.dirname(os.path.abspath(__file__))
+MONTHS = {'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'}
+
+
+def rows(ws):
+    out = []
+    for r in ws.iter_rows(values_only=True):
+        row = list(r)
+        while row and row[-1] is None:
+            row.pop()
+        out.append(row)
+    return out
+
+
+def num(v):
+    return v if isinstance(v, (int, float)) else 0
+
+
+def parse_consol(wb, name):
+    cr = rows(wb[name])
+    hdr_i = next(i for i, r in enumerate(cr) if r and r[0] == 'PROGRAMA DE TRABALHO')
+    hdr = [str(c) if c is not None else '' for c in cr[hdr_i]]
+
+    def col(*preds, default=None):
+        # acha o índice da 1ª coluna cujo cabeçalho satisfaz todos os predicados (substrings, case-insensitive)
+        for idx, h in enumerate(hdr):
+            hu = h.upper()
+            if all(p.upper() in hu for p in preds):
+                return idx
+        return default
+    # Layout lido por NOME de cabeçalho (robusto à ordem e a colunas novas: mediana/Comp.3)
+    IX = {
+        'emp25': col('EMPENHADO 2025', default=2),
+        'dot26': col('DOTAÇÃO AUTORIZADA', default=3),
+        'emp26': col('EMPENHADO 2026', default=4),
+        'proj_liq': col('PROJEÇÃO LIQUIDADO', 'MÉDIA', default=col('PROJEÇÃO LIQUIDADO', default=5)),
+        'proj_liq_med': col('PROJEÇÃO LIQUIDADO', 'MEDIANA'),
+        'comp1': col('COMP. 1', default=6),
+        'alt26': col('ALTERAÇÃO 2026', default=7),
+        'comp2': col('COMP. 2', default=8),
+        'comp3': col('COMP. 3'),
+    }
+    progs, total, total_label = [], None, ''
+    for r in cr[hdr_i + 1:]:
+        if not r or r[0] is None:
+            continue
+        if str(r[0]).startswith('TOTAL'):
+            total = r
+            total_label = str(r[0])
+            continue
+        if str(r[0]).startswith('NOTAS'):
+            break
+        progs.append(r)
+    li = next(i for i, r in enumerate(cr) if r and r[0] == 'Mês')
+    line = []
+    for r in cr[li + 1:]:
+        if not r or r[0] not in MONTHS or len(r) < 3:
+            break
+        line.append({'mes': r[0], 'liq': r[1], 'dot': r[2]})
+    meses = next((r[1] for r in cr if r and isinstance(r[0], str)
+                  and r[0].startswith('Meses fechados')), 7)
+    base_note = next((str(r[0]).split('|')[0].replace('Base:', '').strip()
+                      for r in cr if r and isinstance(r[0], str) and r[0].startswith('Base:')), '')
+
+    def gv(r, idx):
+        return r[idx] if (idx is not None and idx < len(r)) else None
+
+    def mk(r):
+        return {'code': r[0], 'desc': r[1],
+                'emp25': gv(r, IX['emp25']), 'dot26': gv(r, IX['dot26']), 'emp26': gv(r, IX['emp26']),
+                'proj_liq': gv(r, IX['proj_liq']), 'proj_liq_med': gv(r, IX['proj_liq_med']),
+                'comp1': gv(r, IX['comp1']), 'alt26': gv(r, IX['alt26']),
+                'comp2': gv(r, IX['comp2']), 'comp3': gv(r, IX['comp3'])}
+
+    return {'meses': meses, 'total': mk(total), 'line': line,
+            'progs': [mk(r) for r in progs], 'total_label': total_label, 'base_note': base_note}
+
+
+def sheet_for(wb, code):
+    m = re.search(r'\.(\d{4}\.\d{4})$', str(code))
+    if m:
+        k = 'PT_' + m.group(1).replace('.', '_')
+        if k in wb.sheetnames:
+            return k
+    return None
+
+
+OVERRIDE = {'Ação 4202 (Passe Livre)': 'PT_4202_Consolidado',
+            'Ação 2455 (Equilíbrio STPC)': 'PT_2455_Consolidado'}
+
+
+def parse_pt(wb, name):
+    r = rows(wb[name])
+    hi = next(i for i, x in enumerate(r) if x and x[0] == 'INDICADOR')
+    fontes = [c for c in r[hi][1:] if c is not None]
+
+    def vals(label):
+        for x in r:
+            if x and isinstance(x[0], str) and x[0].strip().startswith(label):
+                return x[1:]
+        return None
+
+    labels = {'emp_25': 'Empenhado 2025', 'dot_aut_26': 'Dotação autorizada 2026',
+              'emp_26': 'Empenhado 2026', 'liq_acum': 'Liquidado acumulado 2026',
+              'proj': 'Projeção do liquidado até dez'}
+    ind = {k: vals(l) for k, l in labels.items()}
+    cota = vals('Cota a liberar 2026')
+    conting = vals('Contingenciado 2026')
+    defrows = [x for x in r if x and isinstance(x[0], str)
+               and x[0].strip().startswith('Déficit/superávit vs dotação')]
+    comp1_f = defrows[0][1:] if len(defrows) > 0 else None
+    comp2_f = defrows[1][1:] if len(defrows) > 1 else None
+    pi = next((i for i, x in enumerate(r) if x and x[0] == 'PONTOS DE ATENÇÃO'), None)
+    pontos = []
+    if pi is not None:
+        for x in r[pi + 1:]:
+            if not x or x[0] is None:
+                break
+            if isinstance(x[0], str) and x[0].startswith('DADOS'):
+                break
+            pontos.append(x[0])
+    mis = [i for i, x in enumerate(r) if x and x[0] == 'Mês']
+
+    def mb(idx):
+        out = []
+        for x in r[idx + 1:]:
+            if not x or x[0] not in MONTHS or len(x) < 3:
+                break
+            out.append({'mes': x[0], 'liq': x[1], 'dot': x[2]})
+        return out
+
+    return {'fontes': fontes, 'ind': ind, 'cota': cota, 'conting': conting,
+            'comp1_f': comp1_f, 'comp2_f': comp2_f, 'pontos': pontos,
+            'mon_tot': mb(mis[0]) if len(mis) > 0 else [],
+            'mon_tes': mb(mis[1]) if len(mis) > 1 else []}
+
+
+def build_data(xlsx_path):
+    wb = openpyxl.load_workbook(xlsx_path, data_only=True)
+    CT = parse_consol(wb, 'Consolidado')
+    CS = parse_consol(wb, 'Consolidado (Fontes 100-183)')
+    programs = []
+    for i, pt in enumerate(CT['progs']):
+        ps = CS['progs'][i]
+        assert pt['code'] == ps['code'], (pt['code'], ps['code'])
+        sheet = OVERRIDE.get(pt['code']) or sheet_for(wb, pt['code'])
+        if not sheet:
+            raise RuntimeError('Aba do PT não encontrada para ' + str(pt['code']))
+        d = parse_pt(wb, sheet)
+        cota = d['cota'] or []
+        conting = d['conting'] or []
+        fontes = d['fontes']
+        cota_t = num(cota[-1] if cota else 0)
+        cont_t = num(conting[-1] if conting else 0)
+        cota_s = cont_s = 0
+        for idx, fn in enumerate(fontes):
+            m = re.search(r'(\d{3})', str(fn))
+            if m and m.group(1) in TREAS:
+                cota_s += num(cota[idx] if idx < len(cota) else 0)
+                cont_s += num(conting[idx] if idx < len(conting) else 0)
+
+        def metrics(src, monthly, cv, cc):
+            return {'emp25': src['emp25'], 'dot26': src['dot26'], 'emp26': src['emp26'],
+                    'proj_liq': src['proj_liq'], 'proj_liq_med': src.get('proj_liq_med'),
+                    'comp1': src['comp1'], 'alt26': src['alt26'],
+                    'comp2': src['comp2'], 'comp3': src.get('comp3'),
+                    'monthly': monthly, 'cota': cv, 'conting': cc, 'retido': cv + cc}
+
+        programs.append({'code': pt['code'], 'desc': pt['desc'],
+                         'total': metrics(pt, d['mon_tot'], cota_t, cont_t),
+                         'tesouro': metrics(ps, d['mon_tes'], cota_s, cont_s),
+                         'pontos': d['pontos'], 'fontes': d['fontes'], 'ind': d['ind'],
+                         'cota_f': d['cota'], 'conting_f': d['conting'],
+                         'comp1_f': d['comp1_f'], 'comp2_f': d['comp2_f']})
+    for key, src in (('total', CT), ('tesouro', CS)):
+        src['total']['retido'] = sum(p[key]['retido'] for p in programs)
+        src['total']['cota'] = sum(p[key]['cota'] for p in programs)
+        src['total']['conting'] = sum(p[key]['conting'] for p in programs)
+
+    # reconciliação (sanidade)
+    for v in ('total', 'tesouro'):
+        s1 = sum(p[v]['comp1'] for p in programs)
+        s2 = sum(p[v]['comp2'] for p in programs)
+        T = (CT if v == 'total' else CS)['total']
+        assert abs(s1 - T['comp1']) < 1 and abs(s2 - T['comp2']) < 1, \
+            'Somatório não reconcilia na visão ' + v
+
+    data = {'meses_fechados': CT['meses'], 'treasury': TREAS,
+            'views': {'total': {'total': CT['total'], 'line': CT['line']},
+                      'tesouro': {'total': CS['total'], 'line': CS['line']}},
+            'programs': programs}
+
+    # meta p/ placeholders
+    m = re.search(r'(\d+)\s*linhas\s*[—-]\s*(\d+)\s*PT', CT['total_label'])
+    linhas = m.group(1) if m else str(len(programs))
+    pts = m.group(2) if m else str(len(programs))
+    meta = {'base_note': CT['base_note'] or 'planilha de análise',
+            'linhas': linhas, 'pts': pts}
+    return data, meta
+
+
+# =============================== PAGINA (index.html) =========================================
+def gerar_pagina(xlsx_path, out_html="index.html"):
+    """Gera a pagina visual (dashboard) a partir da planilha do dia. Modo ONLINE (Chart.js via CDN)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    template_path = os.path.join(here, "template.html")
+    data, meta = build_data(xlsx_path)
+    tpl = open(template_path, encoding="utf-8").read()
+    html = tpl.replace("/*__DATA__*/", json.dumps(data, ensure_ascii=False))
+    _MN = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez']
+    mf = int(data['meses_fechados']) if str(data['meses_fechados']).isdigit() else 7
+    last = _MN[mf-1]; nxt = _MN[mf] if mf < 12 else 'dez'
+    html = (html.replace("{{BASE_NOTE}}", meta['base_note'])
+                .replace("{{LINHAS}}", meta['linhas'])
+                .replace("{{PTS}}", meta['pts'])
+                .replace("{{ACUM_UP}}", f"Jan\u2013{last.capitalize()}")
+                .replace("{{ACUM_LBL}}", f"jan\u2013{last}")
+                .replace("{{PROJ_LBL}}", f"{nxt}\u2013dez")
+                .replace("{{MESES_N}}", str(mf))
+                .replace("{{WIN}}", str(mf-3))
+                .replace("{{XLSX}}", os.path.basename(xlsx_path)))
+    with open(out_html, "w", encoding="utf-8") as f:
+        f.write(html)
+    return out_html
+
+
 # =============================== CONEXAO / CONSULTAS / ORQUESTRACAO ===========================
 def ler_sql(nome):
     for enc in ('utf-8', 'latin-1'):
@@ -900,7 +1130,10 @@ def main():
 
     print("4/4  Gerando a projecao...")
     gerar_analise(qpath, lpath, SAIDA)
-    print(f"\nPRONTO! Arquivo gerado: {SAIDA}")
+
+    print("5/5  Gerando a pagina (index.html)...")
+    gerar_pagina(SAIDA, "index.html")
+    print(f"\nPRONTO! Planilha: {SAIDA}  |  Pagina: index.html")
 
 
 if __name__ == "__main__":
