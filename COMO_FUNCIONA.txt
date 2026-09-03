@@ -1,0 +1,126 @@
+﻿╔══════════════════════════════════════════════════════════════════════╗
+║                                                                      ║
+║        PROJEÇÃO DE DÉFICITS · DESPESAS CONTINUADAS · GDF 2026         ║
+║                    Como funciona — roteiro do sistema                ║
+║                                                                      ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+Este documento explica, em linguagem simples, O QUE o sistema faz e
+QUAIS REGRAS ele aplica. Não tem código — é só o roteiro.
+
+
+════════════════════════════════════════════════════════════════════════
+  1 ·  EM UMA FRASE
+════════════════════════════════════════════════════════════════════════
+
+Todo dia, de forma automática, o sistema consulta o banco orçamentário
+do GDF, calcula a projeção de possíveis déficits até o fim de 2026 e
+publica o resultado (planilha + painel) num site que se atualiza sozinho.
+
+
+════════════════════════════════════════════════════════════════════════
+  2 ·  O CAMINHO DOS DADOS  (o que acontece a cada rodada)
+════════════════════════════════════════════════════════════════════════
+
+     ┌─────────────────────────────┐
+     │   Banco Oracle do GDF       │   (só abre pela rede / VPN interna)
+     └─────────────┬───────────────┘
+                   │   2 consultas: PROJEÇÃO DESPESAS (QDD) e LIQUIDADO
+                   ▼
+     ┌─────────────────────────────┐
+     │   Cálculo da projeção       │   (aplica as regras — ver seção 3)
+     └─────────────┬───────────────┘
+                   ▼
+     ┌─────────────────────────────┐
+     │   Planilha Excel do dia     │   Analise_Deficit_2026_AAAA-MM-DD.xlsx
+     └─────────────┬───────────────┘
+                   ▼
+     ┌─────────────────────────────┐
+     │   Página / painel (HTML)    │   index.html (KPIs, gráficos, tabela)
+     └─────────────┬───────────────┘
+                   ▼
+     ┌─────────────────────────────┐
+     │   Publicação no GitHub      │   site: neehalu.github.io/teste_deficit
+     └─────────────────────────────┘
+
+
+════════════════════════════════════════════════════════════════════════
+  3 ·  AS REGRAS DA ANÁLISE
+════════════════════════════════════════════════════════════════════════
+
+São 3 comparativos. Todos confrontam com a DOTAÇÃO AUTORIZADA de 2026
+(o "orçamento disponível"). Resultado negativo = déficit potencial.
+
+  ▸ COMPARATIVO 1  —  "e se repetir 2025?"
+      Compara o EMPENHO de 2025 com a dotação de 2026.
+      Pergunta: a verba de 2026 dá para repetir o gasto do ano passado?
+
+  ▸ COMPARATIVO 2  —  projeção pela MÉDIA
+      Projeta o liquidado até dezembro usando a MÉDIA mensal dos meses
+      já fechados, e compara com a dotação.
+
+  ▸ COMPARATIVO 3  —  projeção pela MEDIANA
+      Igual ao 2, mas usa a MEDIANA (o valor do meio) no lugar da média.
+      É mais robusto: um mês fora da curva não distorce a projeção.
+
+  ── Como a projeção é montada (Comparativos 2 e 3) ──────────────────────
+
+      projeção  =  liquidado já realizado (jan → último mês fechado)
+                   +  (média OU mediana mensal)  ×  meses que faltam
+
+  ── A "janela" de cálculo ───────────────────────────────────────────────
+
+      A média/mediana usa os meses de ABRIL até o último mês fechado.
+      (Começa em abril de propósito: jan–mar costumam ser atípicos.)
+      Quando um mês novo fecha, a janela cresce e a projeção se ajusta.
+
+  ── Agrupamentos especiais ──────────────────────────────────────────────
+
+      • Passe Livre (ação 4202): os programas são somados numa linha só.
+      • Equilíbrio do STPC (ação 2455): idem.
+      • Programa transformado no meio do ano: a execução de 2025 é
+        somada sob o código sucessor.
+
+  ── Duas visões ─────────────────────────────────────────────────────────
+
+      • Fontes Totais  — considera todas as fontes de recursos.
+      • Fontes Tesouro — recalcula tudo usando só as fontes do tesouro
+        (100, 101, 102, 161, 178 e 183).
+
+
+════════════════════════════════════════════════════════════════════════
+  4 ·  COMO RODA SOZINHO  (automação)
+════════════════════════════════════════════════════════════════════════
+
+  • O Agendador de Tarefas do Windows dispara o processo todo dia.
+  • Ele: consulta o banco → gera a planilha e o painel → publica no site.
+    Sem ninguém precisar mexer.
+  • Requisito: o computador LIGADO e com a VPN/rede do GDF ATIVA no
+    horário (o banco só abre por dentro da rede).
+  • Se o PC ficar desligado num dia, aquele dia não atualiza —
+    volta ao normal na próxima rodada.
+
+
+════════════════════════════════════════════════════════════════════════
+  5 ·  O QUE VOCÊ FAZ DE VEZ EM QUANDO  (manutenção)
+════════════════════════════════════════════════════════════════════════
+
+  • QUANDO UM MÊS FECHA (1x por mês): avançar o "corte" de meses
+    fechados, para a projeção passar a incluir o mês novo.
+  • SE A SENHA do banco mudar: regravar a senha na máquina.
+  • Fora isso, é tudo automático.
+
+
+════════════════════════════════════════════════════════════════════════
+  6 ·  SEGURANÇA
+════════════════════════════════════════════════════════════════════════
+
+  • A SENHA do banco nunca fica em arquivo — só na máquina.
+  • Os dados de conexão e as consultas NÃO vão para o site público.
+  • O painel público mostra apenas os números da análise.
+
+
+────────────────────────────────────────────────────────────────────────
+  O painel mostra sempre a DATA e a HORA da última atualização (no
+  rodapé) — assim dá para saber num relance se está do dia.
+────────────────────────────────────────────────────────────────────────
