@@ -36,7 +36,7 @@ SQL_QDD_FILE = "PROJECAO DESPESAS.sql"
 SQL_LIQ_FILE = "LIQUIDADO.sql"
 
 # Saida com a data do dia (um arquivo novo a cada rodada). Para dia/mes: "%d-%m".
-SAIDA = f"Analise_Deficit_2026_{date.today():%Y-%m-%d}.xlsx"
+SAIDA = os.path.join("planilhas", f"Analise_Deficit_2026_{date.today():%Y-%m-%d}.xlsx")
 # ================================================================================
 
 QDD_COLS = ['COEXERCICIO', 'COFONTEMAE', 'CONATUREZA', 'NOSUBTITULO', 'NOUO', 'COUO',
@@ -1043,7 +1043,7 @@ def gerar_pagina(xlsx_path, out_html="index.html"):
                 .replace("{{PROJ_LBL}}", f"{nxt}\u2013dez")
                 .replace("{{MESES_N}}", str(mf))
                 .replace("{{WIN}}", str(mf-3))
-                .replace("{{XLSX}}", os.path.basename(xlsx_path))
+                .replace("{{XLSX}}", xlsx_path.replace("\\", "/"))
                 .replace("{{ATUALIZADO}}", datetime.now().strftime("%d/%m/%Y às %H:%M")))
     with open(out_html, "w", encoding="utf-8") as f:
         f.write(html)
@@ -1124,6 +1124,7 @@ def main():
 
     print("3/4  Montando os arquivos-fonte...")
     os.makedirs("_fontes", exist_ok=True)
+    os.makedirs("planilhas", exist_ok=True)
     qpath = os.path.join("_fontes", "qdd.xlsx")
     lpath = os.path.join("_fontes", "liq.xlsx")
     salvar_aba(montar_qdd(dfq), qpath, "2025 e 2026")
