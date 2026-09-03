@@ -181,7 +181,6 @@ tbody tr:hover td.tes-col{background:rgba(45,212,167,.09)}
           <button data-view="tesouro" title="Fontes 100, 101, 102, 161, 178 e 183">Fontes tesouro</button>
         </div>
         <div class="badge">📅 {{ACUM_UP}} fechados · <b id="badge-meses">{{MESES_N}} meses</b> executados</div>
-        <div class="badge" style="border-color:rgba(91,157,255,.35)">🕓 Atualizado em <b>{{ATUALIZADO}}</b></div>
         <a class="badge" href="{{XLSX}}" download style="text-decoration:none;color:var(--green);border-color:rgba(45,212,167,.35)">⬇ Baixar planilha</a>
       </div>
     </div>
@@ -710,6 +709,7 @@ function renderFonteTable(p){
 /* ---------- footer ---------- */
 function renderFoot(){
   document.getElementById('foot').innerHTML=`
+    <b>🕓 Última atualização:</b> {{ATUALIZADO}}.<br>
     <b>Base:</b> {{BASE_NOTE}} · Valores em R$ · Negativo = déficit.<br>
     <b>Comparativo 1:</b> empenho 2025 × dotação autorizada 2026 (LEI+alterações). <b>Comparativo 2:</b> projeção do liquidado 2026 = acumulado ({{ACUM_LBL}}) + <b>média</b> mensal da janela abr→último mês fechado ({{WIN}}M) × meses restantes ({{PROJ_LBL}}), frente à dotação. <b>Comparativo 3:</b> mesma fórmula usando a <b>mediana</b> da mesma janela — mais robusta a meses atípicos. {{LINHAS}} linhas · {{PTS}} programas de trabalho (Passe Livre e STPC consolidados por ação).<br>
     <b>Fontes tesouro:</b> a visão "Fontes tesouro" recalcula todos os valores considerando apenas as fontes 100, 101, 102, 161, 178 e 183.`;
