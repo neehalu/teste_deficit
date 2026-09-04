@@ -100,15 +100,32 @@ def salvar_aba(linhas, caminho, nome_aba):
         ws.append(lin)
     wb.save(caminho)
 
+# =============================== MESES FECHADOS (automatico) ===================================
+# Descobre sozinho quantos meses de 2026 ja fecharam, a partir da data de hoje.
+# DIA_CORTE: a partir de que dia do mes o mes anterior passa a contar como fechado.
+ANO_BASE  = 2026
+DIA_CORTE = 1   # 1 = conta o mes recem-encerrado ja no dia 1o
+
+def calcular_meses_fechados(hoje=None):
+    hoje = hoje or date.today()
+    if hoje.year > ANO_BASE:            # ano virou: 2026 fechou inteiro
+        return 12
+    if hoje.year < ANO_BASE:
+        return 0
+    fechados = hoje.month - 1
+    if hoje.day < DIA_CORTE:            # inicio do mes: mes anterior ainda nao consolidou
+        fechados -= 1
+    return max(0, min(12, fechados))
+
 # =============================== GERACAO DA ANALISE (ex-build_deficit) =========================
 def gerar_analise(SRC, SRC_LIQ, OUT):
     QDD_NAME = os.path.basename(SRC)
     LIQ_NAME = os.path.basename(SRC_LIQ)
-    # ================= PREMISSA DE CORTE TEMPORAL (edite 1 número por mês) =================
-    # MESES_FECHADOS = quantos meses de 2026 já estão fechados no LIQUIDADO.
-    #   jul fechado -> 7 | ago fechado -> 8 | set fechado -> 9 ...
-    # Tudo abaixo (janela média/mediana, projeção, rótulos, gráficos) deriva deste número.
-    MESES_FECHADOS = 8
+    # ================= PREMISSA DE CORTE TEMPORAL (automatica) =================
+    # MESES_FECHADOS = quantos meses de 2026 ja estao fechados no LIQUIDADO.
+    #   Calculado sozinho a partir da data de hoje (ver calcular_meses_fechados no topo).
+    #   Para forcar um valor manualmente, troque a linha abaixo por, ex.: MESES_FECHADOS = 8
+    MESES_FECHADOS = calcular_meses_fechados()
     # ---------- derivados (não editar) ----------
     _MN = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
     NCLOSED = MESES_FECHADOS
